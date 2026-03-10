@@ -2,9 +2,9 @@ import { Router } from "express";
 import { parse } from "csv-parse";
 import { pipeline } from 'stream/promises';
 import { Transform } from 'stream';
-import prisma from "../db/index.js";
-import type { Record } from "../db/src/generated/prisma/client.js";
-import redis from "../cache/index.js";
+import prisma from "@backend/common/db";
+import redis from "@backend/common/cache";
+import { publishEvent } from "@backend/common/kafka";
 
 const router: Router = Router();
 
@@ -62,6 +62,10 @@ router.post("/upload", async (req, res) => {
         });
 
         // publish to kafka
+        await publishEvent('records-uploaded', {
+            uploadId: upload.id,
+            filename: upload.filename,
+        })
         res.status(200).json({ message: "Uploaded successfully!!" });
 
     } catch (err) {
@@ -85,9 +89,9 @@ router.get("/", async (req, res) => {
         console.error('Cache unavailable:', err);
     }
 
+    // cache fallback
     try {
         const records = await prisma.record.findMany();
-        await redis.set("records:all", JSON.stringify(records));
         return res.status(200).json({ data: records });
     } catch (err) {
         return res.status(503).json({ message: "Service unavailable" });
@@ -95,7 +99,7 @@ router.get("/", async (req, res) => {
 });
 
 async function upsertBatch(batch: Object[], uploadId: string) {
-    const records: Record = batch.map(b => { data: b as JSON, uploadId });
+    const records = batch.map(b => ({ data: b as any, uploadId }));
     await prisma.record.createMany({
         data: records
     })

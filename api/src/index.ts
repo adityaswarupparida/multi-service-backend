@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import express from "express";
 import apiRouter from "./routes/index.js";
+import { connectProducer } from "@backend/common/kafka";
 
 const app = express();
 const PORT = 3000;
@@ -12,6 +14,5 @@ app.get("/health", (req, res) => {
     res.status(200).json({ message: "OK" });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+await connectProducer();
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));

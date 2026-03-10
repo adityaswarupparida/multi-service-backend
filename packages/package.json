@@ -5,11 +5,12 @@
   "main": "index.js",
   "type": "module",
   "exports": {
-    "./db": "./src/db/index.ts",
-    "./cache": "./src/cache/index.ts",
-    "./kafka": "./src/kafka/index.ts"
+    "./db": "./dist/db/index.js",
+    "./cache": "./dist/cache/index.js",
+    "./kafka": "./dist/kafka/index.js"
   },
   "scripts": {
+    "build": "tsc -b",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -18,6 +19,7 @@
   "packageManager": "pnpm@10.32.0",
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",
+    "@prisma/client": "^7.4.2",
     "@types/node": "^25.4.0",
     "dotenv": "^17.3.1",
     "ioredis": "^5.10.0",
