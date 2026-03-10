@@ -4,6 +4,7 @@ import { pipeline } from 'stream/promises';
 import { Transform } from 'stream';
 import prisma from "../db/index.js";
 import type { Record } from "../db/src/generated/prisma/client.js";
+import redis from "../cache/index.js";
 
 const router: Router = Router();
 
@@ -61,7 +62,7 @@ router.post("/upload", async (req, res) => {
         });
 
         // publish to kafka
-        res.status(200).json({ message: "Uploaded" });
+        res.status(200).json({ message: "Uploaded successfully!!" });
 
     } catch (err) {
         console.error(err);
@@ -71,6 +72,25 @@ router.post("/upload", async (req, res) => {
         });
 
         res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+router.get("/", async (req, res) => {
+    try {
+        const cached = await redis.get("records:all");
+        if (cached) {
+            return res.status(200).json({ data: JSON.parse(cached) });
+        }
+    } catch (err) {
+        console.error('Cache unavailable:', err);
+    }
+
+    try {
+        const records = await prisma.record.findMany();
+        await redis.set("records:all", JSON.stringify(records));
+        return res.status(200).json({ data: records });
+    } catch (err) {
+        return res.status(503).json({ message: "Service unavailable" });
     }
 });
 

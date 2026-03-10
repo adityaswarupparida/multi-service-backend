@@ -1,8 +1,8 @@
 import { Router } from "express";
-import uploadRouter from "./upload.js";
+import recordRouter from "./records.js";
 
 const router: Router = Router();
 
-router.use("/records", uploadRouter);
+router.use("/records", recordRouter);
 
 export default router;
