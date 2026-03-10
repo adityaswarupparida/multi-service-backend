@@ -7,7 +7,7 @@ import type { Record } from "../db/src/generated/prisma/client.js";
 
 const router: Router = Router();
 
-router.post("/", async (req, res) => {
+router.post("/upload", async (req, res) => {
     if (req.headers['content-type'] !== 'text/csv') {
         return res.status(400).json({ error: 'Content-Type must be text/csv' });
     }

@@ -3,7 +3,6 @@ import uploadRouter from "./upload.js";
 
 const router: Router = Router();
 
-router.use("/upload", uploadRouter);
-// router.use("/fetch", fetchRouter);
+router.use("/records", uploadRouter);
 
 export default router;
