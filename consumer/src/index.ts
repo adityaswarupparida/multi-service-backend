@@ -3,7 +3,11 @@ import prisma from '@backend/common/db';
 import { kafka } from '@backend/common/kafka';
 import redis from '@backend/common/cache';
 
-const consumer = kafka.consumer({ groupId: 'kafka-consumer' });
+const CACHE_KEY = process.env['REDIS_CACHE_KEY'] ?? 'records:all';
+const KAFKA_TOPIC = process.env['KAFKA_TOPIC'] ?? 'records-uploaded';
+const GROUP_ID = process.env['KAFKA_GROUP_ID'] ?? 'kafka-consumer';
+
+const consumer = kafka.consumer({ groupId: GROUP_ID });
 
 export async function handleMessage({ topic, partition, message }: { topic: string; partition: number; message: any }) {
     const payload = JSON.parse(message.value?.toString() ?? '{}');
@@ -11,7 +15,7 @@ export async function handleMessage({ topic, partition, message }: { topic: stri
 
     try {
         const records = await prisma.record.findMany();
-        await redis.set('records:all', JSON.stringify(records));
+        await redis.set(CACHE_KEY, JSON.stringify(records));
         await consumer.commitOffsets([{
             topic,
             partition,
@@ -28,8 +32,8 @@ const run = async () => {
     await consumer.connect();
     console.log('[consumer] Connected to Kafka');
 
-    await consumer.subscribe({ topic: 'records-uploaded', fromBeginning: false });
-    console.log('[consumer] Subscribed to topic: records-uploaded');
+    await consumer.subscribe({ topic: KAFKA_TOPIC, fromBeginning: false });
+    console.log(`[consumer] Subscribed to topic: ${KAFKA_TOPIC}`);
 
     await consumer.run({
         autoCommit: false,

@@ -6,6 +6,9 @@ import prisma from "@backend/common/db";
 import redis from "@backend/common/cache";
 import { publishEvent } from "@backend/common/kafka";
 
+const CACHE_KEY = process.env['REDIS_CACHE_KEY'] ?? 'records:all';
+const KAFKA_TOPIC = process.env['KAFKA_TOPIC'] ?? 'records-uploaded';
+
 const router: Router = Router();
 
 router.post("/upload", async (req, res) => {
@@ -62,7 +65,7 @@ router.post("/upload", async (req, res) => {
         });
 
         // publish to kafka
-        await publishEvent('records-uploaded', {
+        await publishEvent(KAFKA_TOPIC, {
             uploadId: upload.id,
             filename: upload.filename,
         })
@@ -81,7 +84,7 @@ router.post("/upload", async (req, res) => {
 
 router.get("/", async (req, res) => {
     try {
-        const cached = await redis.get("records:all");
+        const cached = await redis.get(CACHE_KEY);
         if (cached) {
             return res.status(200).json({ data: JSON.parse(cached) });
         }
