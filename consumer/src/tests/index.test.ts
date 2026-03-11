@@ -103,7 +103,7 @@ describe('handleMessage', () => {
         // still succeed. A more reliable approach: monkeypatch prisma.record.findMany
         // for the duration of this test using Jest spying.
         const original = prisma.record.findMany.bind(prisma.record);
-        (prisma.record as any).findMany = vi.fn().mockRejectedValueOnce(new Error('DB unavailable'));
+        (prisma.record as any).findMany = vi.fn().mockRejectedValue(new Error('DB unavailable'));
 
         const msg = buildMessage('some-upload-id', '1');
         // Should NOT throw — the catch block in handleMessage swallows the error.
@@ -128,7 +128,7 @@ describe('handleMessage', () => {
 
         // Make redis.set throw for this call only.
         const originalSet = redis.set.bind(redis);
-        (redis as any).set = vi.fn().mockRejectedValueOnce(new Error('Redis unavailable'));
+        (redis as any).set = vi.fn().mockRejectedValue(new Error('Redis unavailable'));
 
         const msg = buildMessage(upload.id, '2');
         // Should NOT throw — error is caught and logged internally.
