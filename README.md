@@ -8,11 +8,14 @@ A backend system with three components:
 ## Architecture
 
 ```
-CSV Upload → API → PostgreSQL → Kafka → Consumer → Redis Cache
-                                                         
-Fetch Records → API → Redis Cache 
-                          │ (unavailable)
-                          └──→ PostgreSQL (fallback)
+Upload CSV → API → PostgreSQL (insert)
+                 → Kafka (publish event)
+                        ↓
+                   Consumer → PostgreSQL (read all) → Redis Cache (update)
+
+Fetch Records → API → Redis Cache
+                        │ (miss)
+                        └──→ PostgreSQL (fallback)
 ```
 
 ## Prerequisites
