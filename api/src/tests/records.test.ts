@@ -116,11 +116,7 @@ describe('POST /records/upload', () => {
         expect(upload!.filename).toBe('unknown.csv');
     });
 
-    it('handles a large CSV (>1000 rows) correctly — batch flushing', async () => {
-
-
-        // Build a CSV with 1050 data rows to exercise both a full batch flush and the
-        // trailing partial batch in the Transform's flush() hook.
+    it('handles a large CSV (>1000 rows) correctly — batch insert', async () => {
         const rows = ['index'];
         for (let i = 1; i <= 1050; i++) {
             rows.push(String(i));
@@ -143,6 +139,94 @@ describe('POST /records/upload', () => {
 
         const records = await prisma.record.count({ where: { uploadId: upload!.id } });
         expect(records).toBe(1050);
+    });
+
+    it('skips duplicate upload when checksum matches an existing COMPLETED upload', async () => {
+        const csv = 'color\nred\nblue\n';
+
+        // first upload
+        const res1 = await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'colors.csv')
+            .send(csv);
+
+        expect(res1.status).toBe(200);
+        expect(res1.body.message).toBe('Uploaded successfully!!');
+
+        // same file again — should be detected as duplicate
+        const res2 = await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'colors.csv')
+            .send(csv);
+
+        expect(res2.status).toBe(200);
+        expect(res2.body.message).toBe('File already uploaded');
+        expect(res2.body).toHaveProperty('uploadId');
+    });
+
+    it('replaces old records when re-uploading same filename with different data', async () => {
+        const csv1 = 'fruit\napple\nbanana\n';
+        const csv2 = 'fruit\ncherry\ndate\nelderberry\n';
+
+        // first upload
+        await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'fruits.csv')
+            .send(csv1);
+
+        const upload1 = await prisma.upload.findFirst({
+            where: { filename: 'fruits.csv', status: 'COMPLETED' },
+        });
+        expect(upload1).not.toBeNull();
+
+        const records1 = await prisma.record.count({ where: { uploadId: upload1!.id } });
+        expect(records1).toBe(2);
+
+        // re-upload with different data
+        const res2 = await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'fruits.csv')
+            .send(csv2);
+
+        expect(res2.status).toBe(200);
+        expect(res2.body.message).toBe('Uploaded successfully!!');
+
+        // old upload should be REPLACED
+        const oldUpload = await prisma.upload.findUnique({ where: { id: upload1!.id } });
+        expect(oldUpload!.status).toBe('REPLACED');
+
+        // old records should be deleted
+        const oldRecords = await prisma.record.count({ where: { uploadId: upload1!.id } });
+        expect(oldRecords).toBe(0);
+
+        // new upload should have 3 records
+        const newUpload = await prisma.upload.findFirst({
+            where: { filename: 'fruits.csv', status: 'COMPLETED' },
+        });
+        const newRecords = await prisma.record.count({ where: { uploadId: newUpload!.id } });
+        expect(newRecords).toBe(3);
+    });
+
+    it('stores checksum on the upload record', async () => {
+        const csv = 'animal\ncat\n';
+
+        await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'animals.csv')
+            .send(csv);
+
+        const upload = await prisma.upload.findFirst({
+            where: { filename: 'animals.csv' },
+            orderBy: { createdAt: 'desc' },
+        });
+        expect(upload).not.toBeNull();
+        expect(upload!.checksum).toBeTruthy();
+        expect(upload!.checksum!.length).toBe(64); // SHA256 hex length
     });
 });
 

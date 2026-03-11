@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { parse } from "csv-parse";
 import { pipeline } from 'stream/promises';
 import { Transform } from 'stream';
@@ -16,69 +17,86 @@ router.post("/upload", async (req, res) => {
         return res.status(400).json({ error: 'Content-Type must be text/csv' });
     }
 
-    let upload;
-    try {
-        upload = await prisma.upload.create({
-            data: {
-                filename: req.headers['x-filename'] as string || 'unknown.csv',
-                status: "PROCESSING",
-            }
-        });
-    } catch (err) {
-        return res.status(503).json({ message: "File upload failed, try again later" });
-    }
+    let uploadId: string | null = null;
 
     try {
+        const filename = req.headers['x-filename'] as string || 'unknown.csv';
+
+        // stream-parse CSV and compute checksum simultaneously
+        const hash = crypto.createHash('sha256');
+        const rows: Object[] = [];
         const parser = parse({ columns: true, skip_empty_lines: true, trim: true });
-        let batch: Object[] = [];
 
-        const processor = new Transform({
-            objectMode: true,
-            async transform(row, _, cb) {
-                try {
-                    batch.push(row);
-                    if (batch.length >= 1000) {
-                        await upsertBatch(batch, upload.id);
-                        batch = [];
-                    }
-                    cb();
-                } catch (err) {
-                    cb(err as Error);
-                }
-            },
-            async flush(cb) {
-                try {    
-                    if (batch.length) 
-                        await upsertBatch(batch, upload.id); 
-                    cb();                  
-                } catch (err) {
-                    cb(err as Error);
-                }
+        const checksumStream = new Transform({
+            transform(chunk, _, cb) {
+                hash.update(chunk);
+                cb(null, chunk);
             }
         });
 
-        await pipeline(req, parser, processor);
+        parser.on('data', (row) => rows.push(row));
 
-        await prisma.upload.update({
-            where: { id: upload.id },
-            data: { status: "COMPLETED" }
+        await pipeline(req, checksumStream, parser);
+
+        const checksum = hash.digest('hex');
+
+        // skip if exact same file was already uploaded
+        const existing = await prisma.upload.findFirst({
+            where: { checksum, status: 'COMPLETED' },
+        });
+        if (existing) {
+            return res.status(200).json({ message: 'File already uploaded', uploadId: existing.id });
+        }
+
+        // create upload record
+        const upload = await prisma.upload.create({
+            data: { filename, checksum, status: 'PROCESSING' },
+        });
+        uploadId = upload.id;
+
+        // transaction: delete old records for same filename, insert new ones
+        await prisma.$transaction(async (tx) => {
+            const previous = await tx.upload.findFirst({
+                where: { filename, status: 'COMPLETED' },
+            });
+
+            if (previous) {
+                await tx.record.deleteMany({ where: { uploadId: previous.id } });
+                await tx.upload.update({
+                    where: { id: previous.id },
+                    data: { status: 'REPLACED' },
+                });
+            }
+
+            // batch insert
+            for (let i = 0; i < rows.length; i += 1000) {
+                const batch = rows.slice(i, i + 1000);
+                await tx.record.createMany({
+                    data: batch.map(b => ({ data: b as any, uploadId: upload.id })),
+                });
+            }
+
+            await tx.upload.update({
+                where: { id: upload.id },
+                data: { status: 'COMPLETED' },
+            });
         });
 
-        // publish to kafka
         await publishEvent(KAFKA_TOPIC, {
             uploadId: upload.id,
             filename: upload.filename,
-        })
-        res.status(200).json({ message: "Uploaded successfully!!" });
+        });
+        res.status(200).json({ message: 'Uploaded successfully!!' });
 
     } catch (err) {
         console.error(err);
-        await prisma.upload.update({
-            where: { id: upload.id },
-            data: { status: "FAILED" }
-        });
-
-        res.status(500).json({ message: "Internal server error" });
+        if (uploadId) {
+            await prisma.upload.update({
+                where: { id: uploadId },
+                data: { status: 'FAILED' },
+            }).catch(console.error);
+        }
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
@@ -100,12 +118,5 @@ router.get("/", async (req, res) => {
         return res.status(503).json({ message: "Service unavailable" });
     }
 });
-
-async function upsertBatch(batch: Object[], uploadId: string) {
-    const records = batch.map(b => ({ data: b as any, uploadId }));
-    await prisma.record.createMany({
-        data: records
-    })
-}
 
 export default router;

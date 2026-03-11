@@ -47,11 +47,12 @@ docker-compose up -d
 
 This starts PostgreSQL (5432), Redis (6379), Kafka (9092), and Zookeeper.
 
-### 4. Run database migrations
+### 4. Run database migrations and generate Prisma client
 
 ```bash
-cd packages
+cd packages/src/db
 npx prisma migrate dev
+npx prisma generate
 ```
 
 ### 5. Build shared package
@@ -119,6 +120,20 @@ cd consumer && pnpm test:coverage
 ```
 
 > Tests require all Docker services to be running.
+
+### Coverage
+
+**API**
+| File | Stmts | Branch | Funcs | Lines |
+|------|-------|--------|-------|-------|
+| records.ts | 86.31% | 84.21% | 100% | 86.31% |
+
+**Consumer**
+| File | Stmts | Branch | Funcs | Lines |
+|------|-------|--------|-------|-------|
+| index.ts | 96.87% | 71.42% | 100% | 96.87% |
+
+> Uncovered lines are error-handling paths (DB/Redis/Kafka failures) that require mocking or service downtime to trigger.
 
 ## Useful Commands
 

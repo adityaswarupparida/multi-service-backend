@@ -16,6 +16,7 @@ datasource db {
 model Upload {
   id        String   @id @default(uuid())
   filename  String
+  checksum  String?
   status    Status
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -35,4 +36,5 @@ enum Status {
   PROCESSING
   COMPLETED
   FAILED
+  REPLACED
 }
