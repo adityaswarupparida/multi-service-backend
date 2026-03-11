@@ -92,6 +92,8 @@ curl -X POST http://localhost:3000/api/records/upload \
   --data-binary @data.csv
 ```
 
+> **Note:** `@data.csv` refers to the file path relative to where you run the curl command. Run it from the project root, or use an absolute path like `@/path/to/data.csv`.
+
 **Response:**
 ```json
 { "message": "Uploaded successfully!!" }
