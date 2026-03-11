@@ -40,6 +40,10 @@ router.post("/upload", async (req, res) => {
 
         const checksum = hash.digest('hex');
 
+        if (rows.length === 0) {
+            return res.status(400).json({ error: 'CSV file has no data rows' });                                                                                           
+        }
+
         // skip if exact same file was already uploaded
         const existing = await prisma.upload.findFirst({
             where: { checksum, status: 'COMPLETED' },

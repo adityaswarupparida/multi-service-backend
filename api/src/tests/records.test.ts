@@ -7,11 +7,12 @@
  * Run:  pnpm test  (inside api/)
  */
 
+import { vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import prisma from '@backend/common/db';
 import redis from '@backend/common/cache';
-import { connectProducer } from '@backend/common/kafka';
+import * as kafkaModule from '@backend/common/kafka';
 import recordsRouter from '../routes/records.js';
 
 // ---------------------------------------------------------------------------
@@ -26,8 +27,7 @@ app.use('/records', recordsRouter);
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-    // Ensure the Kafka producer is connected before any upload test fires.
-    await connectProducer();
+    await kafkaModule.connectProducer();
 });
 
 afterAll(async () => {
@@ -209,6 +209,50 @@ describe('POST /records/upload', () => {
         });
         const newRecords = await prisma.record.count({ where: { uploadId: newUpload!.id } });
         expect(newRecords).toBe(3);
+    });
+
+    it('returns 400 when CSV has header but no data rows', async () => {
+        const csv = 'name,age\n';
+
+        const res = await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'empty.csv')
+            .send(csv);
+
+        expect(res.status).toBe(400);
+        expect(res.body).toMatchObject({ error: 'CSV file has no data rows' });
+    });
+
+    it('returns 500 and marks upload as FAILED when transaction fails', async () => {
+        const csv = 'tool\nhammer\n';
+
+        // mock $transaction to throw after upload is created
+        const originalTransaction = prisma.$transaction.bind(prisma);
+        (prisma as any).$transaction = vi.fn().mockRejectedValue(new Error('Transaction failed'));
+
+        const res = await request(app)
+            .post('/records/upload')
+            .set('Content-Type', 'text/csv')
+            .set('x-filename', 'fail-test.csv')
+            .send(csv);
+
+        expect(res.status).toBe(500);
+        expect(res.body).toMatchObject({ message: 'Internal server error' });
+
+        // upload should be marked as FAILED
+        const upload = await prisma.upload.findFirst({
+            where: { filename: 'fail-test.csv', status: 'FAILED' },
+        });
+        expect(upload).not.toBeNull();
+
+        // restore
+        (prisma as any).$transaction = originalTransaction;
+
+        // cleanup
+        if (upload) {
+            await prisma.upload.delete({ where: { id: upload.id } });
+        }
     });
 
     it('stores checksum on the upload record', async () => {
